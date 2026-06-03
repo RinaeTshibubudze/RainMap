@@ -5,10 +5,6 @@ import {
   buildScalarGrid,
   GRID_W,
   GRID_H,
-  GRID_WEST,
-  GRID_EAST,
-  GRID_NORTH,
-  GRID_SOUTH,
   type StationWindData,
 } from "../utils/windUtils";
 
@@ -73,27 +69,6 @@ function getFieldValue(s: StationWindData, field: WeatherField): number {
   return s.precipitationPct;
 }
 
-function markerColor(s: StationWindData, field: WeatherField): string {
-  const [r, g, b] = valueToRgba(getFieldValue(s, field), field);
-  return `rgb(${r},${g},${b})`;
-}
-
-function popupHtml(s: StationWindData, field: WeatherField): string {
-  const value = getFieldValue(s, field);
-  const label =
-    field === "temperature"
-      ? `Temperature: ${value.toFixed(1)}°C`
-      : field === "humidity"
-        ? `Humidity: ${value.toFixed(0)}%`
-        : `Precipitation: ${value.toFixed(0)}%`;
-  return (
-    `<b>${s.name}</b><br/>` +
-    `Province: ${s.province}<br/>` +
-    `${label}<br/>` +
-    `Condition: ${s.weatherDescription}`
-  );
-}
-
 interface WeatherHeatmapProps {
   stationWinds: StationWindData[];
   field: WeatherField;
@@ -105,57 +80,67 @@ export function WeatherHeatmap({ stationWinds, field }: WeatherHeatmapProps) {
   useEffect(() => {
     if (stationWinds.length === 0) return;
 
-    // Build IDW scalar grid
-    const grid = buildScalarGrid(stationWinds, (s) => getFieldValue(s, field));
+    let overlay: L.ImageOverlay | null = null;
 
-    // Render to offscreen canvas → ImageOverlay
-    const offscreen = document.createElement("canvas");
-    offscreen.width = GRID_W;
-    offscreen.height = GRID_H;
-    const ctx = offscreen.getContext("2d")!;
-    const imgData = ctx.createImageData(GRID_W, GRID_H);
+    const render = () => {
+      // Get live viewport bounds
+      const b = map.getBounds();
+      const bounds = {
+        west: b.getWest(),
+        east: b.getEast(),
+        south: b.getSouth(),
+        north: b.getNorth(),
+      };
 
-    for (let gy = 0; gy < GRID_H; gy++) {
-      for (let gx = 0; gx < GRID_W; gx++) {
-        const val = grid[gy * GRID_W + gx];
-        const [r, g, b, a] = valueToRgba(val, field);
-        const i = (gy * GRID_W + gx) * 4;
-        imgData.data[i] = r;
-        imgData.data[i + 1] = g;
-        imgData.data[i + 2] = b;
-        imgData.data[i + 3] = a;
+      // Build IDW scalar grid over current viewport
+      const grid = buildScalarGrid(
+        stationWinds,
+        (s) => getFieldValue(s, field),
+        bounds,
+      );
+
+      // Render to offscreen canvas
+      const offscreen = document.createElement("canvas");
+      offscreen.width = GRID_W;
+      offscreen.height = GRID_H;
+      const ctx = offscreen.getContext("2d")!;
+      const imgData = ctx.createImageData(GRID_W, GRID_H);
+      for (let gy = 0; gy < GRID_H; gy++) {
+        for (let gx = 0; gx < GRID_W; gx++) {
+          const val = grid[gy * GRID_W + gx];
+          const [r, g, bv, a] = valueToRgba(val, field);
+          const i = (gy * GRID_W + gx) * 4;
+          imgData.data[i] = r;
+          imgData.data[i + 1] = g;
+          imgData.data[i + 2] = bv;
+          imgData.data[i + 3] = a;
+        }
       }
-    }
-    ctx.putImageData(imgData, 0, 0);
+      ctx.putImageData(imgData, 0, 0);
 
-    const bounds = L.latLngBounds(
-      [GRID_SOUTH, GRID_WEST],
-      [GRID_NORTH, GRID_EAST],
-    );
-    const overlay = L.imageOverlay(offscreen.toDataURL(), bounds, {
-      opacity: 1,
-      interactive: false,
-    });
-    overlay.addTo(map);
+      const lBounds = L.latLngBounds(
+        [bounds.south, bounds.west],
+        [bounds.north, bounds.east],
+      );
 
-    // Station markers colored by field value
-    const markers: L.CircleMarker[] = [];
-    for (const sw of stationWinds) {
-      const color = markerColor(sw, field);
-      const marker = L.circleMarker([sw.lat, sw.lng], {
-        radius: 5,
-        color: "#ffffff",
-        fillColor: color,
-        fillOpacity: 0.95,
-        weight: 1,
-      }).addTo(map);
-      marker.bindPopup(popupHtml(sw, field));
-      markers.push(marker);
-    }
+      if (overlay) {
+        overlay.remove();
+      }
+      overlay = L.imageOverlay(offscreen.toDataURL(), lBounds, {
+        opacity: 1,
+        interactive: false,
+      });
+      overlay.addTo(map);
+    };
+
+    render();
+    map.on("moveend", render);
+    map.on("zoomend", render);
 
     return () => {
-      overlay.remove();
-      markers.forEach((m) => m.remove());
+      map.off("moveend", render);
+      map.off("zoomend", render);
+      overlay?.remove();
     };
   }, [map, stationWinds, field]);
 

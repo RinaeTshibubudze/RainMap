@@ -320,17 +320,23 @@ export function sampleWindGrid(
 }
 
 /**
- * Bake IDW of any scalar field into a Float32Array grid covering South Africa.
+ * Bake IDW of any scalar field into a Float32Array grid.
+ * Bounds default to the fixed South Africa constants but can be overridden.
  */
 export function buildScalarGrid(
     stationWinds: StationWindData[],
     getValue: (s: StationWindData) => number,
+    bounds?: { west: number; east: number; south: number; north: number },
 ): Float32Array {
+    const west = bounds?.west ?? GRID_WEST;
+    const east = bounds?.east ?? GRID_EAST;
+    const south = bounds?.south ?? GRID_SOUTH;
+    const north = bounds?.north ?? GRID_NORTH;
     const grid = new Float32Array(GRID_W * GRID_H);
     for (let gy = 0; gy < GRID_H; gy++) {
         for (let gx = 0; gx < GRID_W; gx++) {
-            const lng = GRID_WEST + (gx / (GRID_W - 1)) * (GRID_EAST - GRID_WEST);
-            const lat = GRID_NORTH - (gy / (GRID_H - 1)) * (GRID_NORTH - GRID_SOUTH);
+            const lng = west + (gx / (GRID_W - 1)) * (east - west);
+            const lat = north - (gy / (GRID_H - 1)) * (north - south);
             let wSum = 0, vSum = 0;
             for (const s of stationWinds) {
                 const dx = lng - s.lng;

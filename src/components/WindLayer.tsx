@@ -11,21 +11,21 @@ interface WindLayerProps {
   stationWinds: StationWindData[];
 }
 
-const SOUTH = -35;
-const NORTH = -22;
-const WEST = 10;
-const EAST = 39;
-
-const NUM_PARTICLES = 8000;
-const MAX_AGE = 120;
-const SPEED_SCALE = 0.18;
+const NUM_PARTICLES = 5000;
+const MAX_AGE = 60;
+const SPEED_SCALE = 0.06;
 
 type Particle = { lng: number; lat: number; age: number; maxAge: number };
 
-function randomParticle(): Particle {
+function randomParticle(
+  west: number,
+  east: number,
+  south: number,
+  north: number,
+): Particle {
   return {
-    lng: WEST + Math.random() * (EAST - WEST),
-    lat: SOUTH + Math.random() * (NORTH - SOUTH),
+    lng: west + Math.random() * (east - west),
+    lat: south + Math.random() * (north - south),
     age: Math.floor(Math.random() * MAX_AGE),
     maxAge: 40 + Math.floor(Math.random() * MAX_AGE),
   };
@@ -54,10 +54,20 @@ export function WindLayer({ stationWinds }: WindLayerProps) {
     map.on("resize", setSize);
 
     // ── Particle animation ────────────────────────────────────────────────────
-    const particles: Particle[] = Array.from(
-      { length: NUM_PARTICLES },
-      randomParticle,
-    );
+    const getBounds = () => {
+      const b = map.getBounds();
+      return {
+        west: b.getWest(),
+        east: b.getEast(),
+        south: b.getSouth(),
+        north: b.getNorth(),
+      };
+    };
+
+    const particles: Particle[] = Array.from({ length: NUM_PARTICLES }, () => {
+      const b = getBounds();
+      return randomParticle(b.west, b.east, b.south, b.north);
+    });
     const ctx = canvas.getContext("2d")!;
 
     let isPanning = false;
@@ -73,16 +83,22 @@ export function WindLayer({ stationWinds }: WindLayerProps) {
 
     const animate = () => {
       if (!isPanning) {
+        const { west, east, south, north } = getBounds();
         // Fade trails toward transparent (not toward black)
+        // Slower fade = more trail accumulation, especially when zoomed out
         ctx.globalCompositeOperation = "destination-out";
-        ctx.fillStyle = "rgba(0,0,0,0.05)";
+        ctx.fillStyle = "rgba(0,0,0,0.07)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.globalCompositeOperation = "source-over";
+
+        // Line width scales up at lower zoom so trails stay visible when zoomed out
+        const zoom = map.getZoom();
+        const lineWidth = Math.max(1.5, 8 - zoom);
 
         for (const p of particles) {
           p.age++;
           if (p.age > p.maxAge) {
-            Object.assign(p, randomParticle());
+            Object.assign(p, randomParticle(west, east, south, north));
             continue;
           }
 
@@ -98,12 +114,12 @@ export function WindLayer({ stationWinds }: WindLayerProps) {
           const newLat = p.lat + (wind.v * SPEED_SCALE) / 111;
 
           if (
-            newLng < WEST ||
-            newLng > EAST ||
-            newLat < SOUTH ||
-            newLat > NORTH
+            newLng < west ||
+            newLng > east ||
+            newLat < south ||
+            newLat > north
           ) {
-            Object.assign(p, randomParticle());
+            Object.assign(p, randomParticle(west, east, south, north));
             continue;
           }
 
@@ -112,19 +128,8 @@ export function WindLayer({ stationWinds }: WindLayerProps) {
 
           const [r, g, b] = speedToRgb(wind.speed);
           const alpha = 0.75 + 0.25 * (1 - p.age / p.maxAge);
-
-          // Glow: wide soft layer beneath
-          ctx.strokeStyle = `rgba(${r},${g},${b},${alpha * 0.3})`;
-          ctx.lineWidth = 6;
-          ctx.lineCap = "round";
-          ctx.beginPath();
-          ctx.moveTo(pt1.x, pt1.y);
-          ctx.lineTo(pt2.x, pt2.y);
-          ctx.stroke();
-
-          // Sharp bright core
           ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
-          ctx.lineWidth = 2.5;
+          ctx.lineWidth = lineWidth;
           ctx.beginPath();
           ctx.moveTo(pt1.x, pt1.y);
           ctx.lineTo(pt2.x, pt2.y);
