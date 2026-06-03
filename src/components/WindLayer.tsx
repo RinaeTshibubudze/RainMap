@@ -11,15 +11,14 @@ interface WindLayerProps {
   stationWinds: StationWindData[];
 }
 
-// South Africa bounding box
 const SOUTH = -35;
 const NORTH = -22;
-const WEST = 16;
-const EAST = 34;
+const WEST = 10;
+const EAST = 39;
 
-const NUM_PARTICLES = 5000;
-const MAX_AGE = 60;
-const SPEED_SCALE = 0.06;
+const NUM_PARTICLES = 8000;
+const MAX_AGE = 120;
+const SPEED_SCALE = 0.18;
 
 type Particle = { lng: number; lat: number; age: number; maxAge: number };
 
@@ -76,7 +75,7 @@ export function WindLayer({ stationWinds }: WindLayerProps) {
       if (!isPanning) {
         // Fade trails toward transparent (not toward black)
         ctx.globalCompositeOperation = "destination-out";
-        ctx.fillStyle = "rgba(0,0,0,0.12)";
+        ctx.fillStyle = "rgba(0,0,0,0.05)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.globalCompositeOperation = "source-over";
 
@@ -112,9 +111,20 @@ export function WindLayer({ stationWinds }: WindLayerProps) {
           const pt2 = map.latLngToContainerPoint([newLat, newLng]);
 
           const [r, g, b] = speedToRgb(wind.speed);
-          const alpha = 0.55 + 0.45 * (1 - p.age / p.maxAge);
+          const alpha = 0.75 + 0.25 * (1 - p.age / p.maxAge);
+
+          // Glow: wide soft layer beneath
+          ctx.strokeStyle = `rgba(${r},${g},${b},${alpha * 0.3})`;
+          ctx.lineWidth = 6;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(pt1.x, pt1.y);
+          ctx.lineTo(pt2.x, pt2.y);
+          ctx.stroke();
+
+          // Sharp bright core
           ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2.5;
           ctx.beginPath();
           ctx.moveTo(pt1.x, pt1.y);
           ctx.lineTo(pt2.x, pt2.y);
