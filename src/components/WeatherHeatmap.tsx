@@ -17,9 +17,7 @@ function valueToRgba(
   if (field === "temperature") {
     // 0–40°C: blue → cyan → green → yellow → red
     const t = Math.max(0, Math.min(1, value / 40));
-    let r = 0,
-      g = 0,
-      b = 0;
+    let r: number, g: number, b: number;
     if (t < 0.25) {
       const s = t / 0.25;
       r = 0;
